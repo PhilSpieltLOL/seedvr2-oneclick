@@ -38,8 +38,19 @@ pip install -r requirements.txt
 pip install gradio "huggingface_hub[cli]"
 # flash-attn: avoids a transformers KeyError('flash_attn') and powers flash_attn_2.
 pip install flash-attn --no-build-isolation || echo "!! flash-attn build failed; use ATTENTION=sdpa if launch crashes."
-# SageAttention: only used by the 5090-only sageattn_3 backend; ignore failures.
+# SageAttention 2 (sageattn_2 backend; safe on any card). pip ONLY ever installs v2.
 pip install sageattention || true
+# SageAttention 3 (Blackwell FP4, sageattn_3) is NOT on PyPI - it must be COMPILED FROM
+# SOURCE, so we build it automatically here. Needs a 5090 + Python >=3.13, PyTorch >=2.8,
+# CUDA >=12.8; on an A6000 (or older toolchain) the build just fails harmlessly and you
+# stay on flash_attn_2. Set SKIP_SAGEATTN3=1 to skip this step (e.g. on an A6000).
+if [ "${SKIP_SAGEATTN3:-0}" != "1" ]; then
+  blue "Building SageAttention 3 from source (Blackwell FP4 backend, sageattn_3)"
+  ( git clone https://github.com/thu-ml/SageAttention /tmp/SageAttention 2>/dev/null || true
+    cd /tmp/SageAttention/sageattention3_blackwell && python setup.py install \
+      && python -c "from sageattn3 import sageattn3_blackwell; print('SageAttention3 OK')" ) \
+    || echo "!! SageAttention 3 build failed (expected on A6000/older toolchain); using flash_attn_2."
+fi
 
 blue "Writing webui.py"
 cat > webui.py <<'PYEOF'
